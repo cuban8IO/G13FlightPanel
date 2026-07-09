@@ -1,8 +1,10 @@
 #if HAVE_SIMCONNECT
 using System.Runtime.InteropServices;
 using Microsoft.FlightSimulator.SimConnect;
+using G13FlightPanel.Application;
+using G13FlightPanel.Domain;
 
-namespace G13FlightPanel;
+namespace G13FlightPanel.Infrastructure;
 
 /// Real data source, only compiled once libs/Microsoft.FlightSimulator.SimConnect.dll
 /// is present (see G13FlightPanel.csproj and README.md). Uses the official managed
@@ -14,8 +16,15 @@ public sealed class SimConnectFlightDataSource : IFlightDataSource
     private enum Definitions { FlightData }
     private enum Requests { FlightData }
 
+    // Feldreihenfolge MUSS mit FlightDataVariables.All uebereinstimmen (siehe
+    // Application/FlightDataVariables.cs) - der Startup-Check unten prueft zumindest
+    // die Anzahl. RegisterDataDefineStruct<T>() reflektiert ueber diese benannten
+    // Felder zur Registrierungszeit und gleicht sie 1:1 gegen die AddToDataDefinition-
+    // Reihenfolge ab - das ist der Grund, warum dieses Struct (statt z.B. eines
+    // dynamischen double[]-Feldes) so bleibt: es ist die einzige Form, von der bekannt
+    // ist, dass der SimConnect-Wrapper sie korrekt marshalt.
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi, Pack = 1)]
-    private struct FlightDataStruct
+    internal struct FlightDataStruct
     {
         public double IndicatedAirspeed;
         public double Altitude;
@@ -37,6 +46,19 @@ public sealed class SimConnectFlightDataSource : IFlightDataSource
         public double ApNav1Lock;
         public double ApFmaLateralMode;
         public double ApFmaVerticalMode;
+    }
+
+    // Faellt sofort mit klarer Meldung auf statt spaeter still falsche/verschobene Werte
+    // aufs LCD zu bringen, falls FlightDataVariables.All und FlightDataStruct auseinander-
+    // laufen (z.B. eine neue Variable wurde nur an einer der beiden Stellen ergaenzt).
+    static SimConnectFlightDataSource()
+    {
+        int fieldCount = typeof(FlightDataStruct).GetFields().Length;
+        int variableCount = FlightDataVariables.All.Count;
+        if (fieldCount != variableCount)
+            throw new InvalidOperationException(
+                $"FlightDataStruct hat {fieldCount} Felder, aber FlightDataVariables.All hat " +
+                $"{variableCount} Eintraege - beides muss in Anzahl und Reihenfolge uebereinstimmen.");
     }
 
     private const int MaxFailedAttempts = 3;
@@ -141,71 +163,17 @@ public sealed class SimConnectFlightDataSource : IFlightDataSource
         _sc.OnRecvException += (_, e) =>
             Console.WriteLine($"SimConnect-Fehler: {(SIMCONNECT_EXCEPTION)e.dwException}");
 
-        AddVar("AIRSPEED INDICATED", "Knots");
-        AddVar("INDICATED ALTITUDE", "Feet");
-        AddVar("VERTICAL SPEED", "Feet per minute");
-        AddVar("PLANE HEADING DEGREES MAGNETIC", "Degrees");
-
-        // FBW A32NX legt Flap-Lever & Co. als eigene L:-Variable ab. Direktes Lesen von
-        // L:-Vars per SimConnect geht seit Sim Update 10 (2022) ohne Zusatzsoftware -
-        // Name ist case-sensitive und muss exakt zum FBW-Build passen. Klappt es bei dir
-        // nicht (aeltere Sim-Version), alternativ das MobiFlight-WASM-Modul installieren
-        // und dessen Client-Data-Area-Bridge fuer L:-Vars nutzen.
-        AddVar("L:A32NX_FLAPS_HANDLE_INDEX", "Number");
-
-        AddVar("NAV ACTIVE FREQUENCY:1", "MHz");
-        AddVar("NAV OBS:1", "Degrees");
-
-        AddVar("FUEL TOTAL QUANTITY", "Gallons");
-        AddVar("FUEL TOTAL CAPACITY", "Gallons");
-        AddVar("AUTOPILOT MASTER", "Bool");
-        AddVar("AUTOPILOT ALTITUDE LOCK VAR", "Feet");
-        AddVar("AUTOPILOT HEADING LOCK DIR", "Degrees");
-        AddVar("AUTOPILOT AIRSPEED HOLD VAR", "Knots");
-        AddVar("AUTOPILOT APPROACH HOLD", "Bool");
-        AddVar("AUTOPILOT ALTITUDE LOCK", "Bool");
-        AddVar("AUTOPILOT VERTICAL HOLD", "Bool");
-        AddVar("AUTOPILOT HEADING LOCK", "Bool");
-        AddVar("AUTOPILOT NAV1 LOCK", "Bool");
-
-        // FBW-eigene FMA-Modus-Codes fuer LOC*/LOC und G/S*/G/S - die generischen
-        // AUTOPILOT-*-Booleans oben kennen den Unterschied zwischen "armed/capturing"
-        // (der Stern) und "captured/tracking" nicht, das ist Airbus-FMA-spezifisch.
-        // Zahlencodes nach bestem Wissen (FlyByWire FmaVerticalMode/FmaLateralMode enum):
-        // Lateral: 30=LOC*, 31=LOC. Vertical: 90=G/S*, 91=G/S. Koennen sich zwischen
-        // FBW-Versionen aendern - falls LOC*/G/S auf dem Display falsch/blank bleiben,
-        // im Sim-Devmodus (Behavior Debug) den tatsaechlichen LVar-Wert pruefen.
-        AddVar("L:A32NX_FMA_LATERAL_MODE", "Number");
-        AddVar("L:A32NX_FMA_VERTICAL_MODE", "Number");
+        foreach (var v in FlightDataVariables.All)
+            _sc.AddToDataDefinition(Definitions.FlightData, v.Name, v.Units,
+                SIMCONNECT_DATATYPE.FLOAT64, 0f, SimConnect.SIMCONNECT_UNUSED);
 
         _sc.RegisterDataDefineStruct<FlightDataStruct>(Definitions.FlightData);
 
         _sc.OnRecvSimobjectData += (_, data) =>
         {
             if (data.dwRequestID != (uint)Requests.FlightData) return;
-            var d = (FlightDataStruct)data.dwData[0];
-            DataUpdated?.Invoke(new FlightData
-            {
-                IndicatedAirspeedKt = d.IndicatedAirspeed,
-                AltitudeFt = d.Altitude,
-                VerticalSpeedFpm = d.VerticalSpeed,
-                HeadingDeg = d.HeadingMagnetic,
-                FlapsHandleIndex = d.FlapsHandleIndex,
-                Nav1FrequencyMhz = d.Nav1Frequency,
-                Nav1Obs = d.Nav1Obs,
-                FuelPercent = d.FuelTotalCapacity > 0 ? d.FuelTotalQuantity / d.FuelTotalCapacity * 100.0 : 0,
-                ApMasterOn = d.ApMaster != 0,
-                ApSelectedAltitudeFt = d.ApAltitudeLockVar,
-                ApSelectedHeadingDeg = d.ApHeadingLockDir,
-                ApSelectedSpeedKt = d.ApAirspeedHoldVar,
-                ApApproachHoldOn = d.ApApproachHold != 0,
-                ApAltitudeHoldOn = d.ApAltitudeLock != 0,
-                ApVerticalSpeedHoldOn = d.ApVerticalHold != 0,
-                ApHeadingHoldOn = d.ApHeadingLock != 0,
-                ApNavHoldOn = d.ApNav1Lock != 0,
-                ApFmaLateralMode = (int)d.ApFmaLateralMode,
-                ApFmaVerticalMode = (int)d.ApFmaVerticalMode,
-            });
+            var raw = (FlightDataStruct)data.dwData[0];
+            DataUpdated?.Invoke(ExtractFlightData(raw));
         };
 
         _sc.RequestDataOnSimObject(Requests.FlightData, Definitions.FlightData,
@@ -213,9 +181,21 @@ public sealed class SimConnectFlightDataSource : IFlightDataSource
             SIMCONNECT_DATA_REQUEST_FLAG.DEFAULT, 0, 0, 0);
     }
 
-    private void AddVar(string name, string units) =>
-        _sc!.AddToDataDefinition(Definitions.FlightData, name, units,
-            SIMCONNECT_DATATYPE.FLOAT64, 0f, SimConnect.SIMCONNECT_UNUSED);
+    // Reflektiert ueber das bereits vom SimConnect-Wrapper korrekt befuellte Struct
+    // (passiert NACH dem Marshaling, also ganz normale, ungefaehrliche .NET-Reflection)
+    // und zippt die Werte in Deklarationsreihenfolge gegen FlightDataVariables.All.
+    // internal, damit ein Wegwerf-Check (siehe README/Verifikation) sie direkt aufrufen kann.
+    internal static FlightData ExtractFlightData(FlightDataStruct raw)
+    {
+        var fields = typeof(FlightDataStruct).GetFields();
+        var data = new FlightData();
+        for (int i = 0; i < FlightDataVariables.All.Count; i++)
+        {
+            double value = (double)fields[i].GetValue(raw)!;
+            FlightDataVariables.All[i].Assign(data, value);
+        }
+        return data;
+    }
 
     public void Dispose()
     {
