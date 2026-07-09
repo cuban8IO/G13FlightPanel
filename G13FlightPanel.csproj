@@ -5,6 +5,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Version>0.1.0</Version>
     <!-- AnyCPU runs as x64 here. LogitechLcd.dll from the LGS LCD SDK sometimes only
          ships as x86 - if LcdDisplay reports BadImageFormatException on your gaming PC,
          set this to x86 instead (and make sure a matching x86 .NET runtime is installed). -->

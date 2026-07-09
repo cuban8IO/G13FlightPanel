@@ -13,6 +13,37 @@ FLP 2/4      FUEL 075         HDG SEL 280
 NAV 118.10   OBS 270          SPD SEL 260KT
 ```
 
+## Voraussetzungen
+
+- **Windows 10/11** – nutzt Windows-spezifische APIs (P/Invoke gegen eine native DLL,
+  `net10.0-windows`-Target), läuft nicht unter Linux/macOS.
+- **.NET 10 SDK** – [dotnet.microsoft.com/download](https://dotnet.microsoft.com/download)
+  zum Bauen und Ausführen.
+- Optional, für echte Hardware-Ausgabe: ein **Logitech G13** Gameboard + die
+  **Logitech Gaming Software (LGS)** – siehe Abschnitt 2. Ohne beides läuft die App im
+  Demo-Modus mit reiner Konsolenausgabe.
+- Optional, für echte Flugdaten: **Microsoft Flight Simulator 2020** mit installiertem
+  **MSFS SDK** – siehe Abschnitt 3. Ohne SDK/laufendes MSFS läuft die App im Demo-Modus mit
+  synthetischen Werten.
+- Für die volle Anzeige (Flap-Lever, Autopilot-Modi inkl. LOC/G-S): das
+  **FlyByWire A32NX** Mod, da einige Werte FBW-spezifische LVars nutzen (siehe
+  "Verwendete SimVars/LVars" unten). Mit anderen Flugzeugen laufen IAS/Höhe/VS/Heading/
+  NAV/Fuel/generische AP-Werte trotzdem normal, nur Flap-Lever und LOC\*/G-S\* bleiben leer.
+
+## Installation
+
+1. Repository klonen:
+   ```
+   git clone https://github.com/cuban8IO/G13FlightPanel.git
+   cd G13FlightPanel
+   ```
+2. Bauen: `dotnet build`
+3. Starten: `dotnet run` (oder `dotnet run --demo` für erzwungenen Demo-Modus)
+
+Damit läuft der Demo-Modus (Konsolenausgabe, synthetische Werte) – ohne G13 oder MSFS
+nötig. Für die Hardware-Ausgabe bzw. echte Flugdaten die Abschnitte 2 und 3 unten
+durchgehen.
+
 ## Architektur
 
 - `FlightData.cs` – Datenmodell für einen Snapshot.
