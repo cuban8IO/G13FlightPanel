@@ -1,6 +1,10 @@
 using System.Drawing;
 using System.Windows.Forms;
-using G13FlightPanel;
+using Microsoft.Extensions.DependencyInjection;
+using G13FlightPanel.Application;
+using G13FlightPanel.Application.Pages;
+using G13FlightPanel.Domain;
+using G13FlightPanel.Infrastructure;
 
 Application.EnableVisualStyles();
 
@@ -19,17 +23,31 @@ if (!isFirstInstance)
 
 try
 {
-    using var lcd = new LcdDisplay();
-
     bool forceDemo = Array.IndexOf(args, "--demo") >= 0;
 
-    IFlightDataSource source;
+    // Composition Root: hier und nur hier werden alle Schichten (Domain/Application/
+    // Infrastructure) verdrahtet. Neue Seite hinzufuegen = neue ILcdPage-Registrierung
+    // hier, keine andere Datei in diesem Bereich anfassen.
+    var services = new ServiceCollection();
+
 #if HAVE_SIMCONNECT
-    source = forceDemo ? new DemoFlightDataSource() : new SimConnectFlightDataSource();
+    services.AddSingleton<IFlightDataSource>(_ =>
+        forceDemo ? new DemoFlightDataSource() : new SimConnectFlightDataSource());
 #else
-    source = new DemoFlightDataSource();
+    services.AddSingleton<IFlightDataSource, DemoFlightDataSource>();
 #endif
 
+    services.AddSingleton<ILcdPage, FlightDataPage>();
+    services.AddSingleton<ILcdPage, AutopilotPage>();
+    services.AddSingleton<IPageRepository, PageRepository>();
+    services.AddSingleton<LcdDisplay>();
+
+    using var provider = services.BuildServiceProvider();
+
+    var lcd = provider.GetRequiredService<LcdDisplay>();
+    var source = provider.GetRequiredService<IFlightDataSource>();
+
+    using (lcd)
     using (source)
     {
         source.DataUpdated += lcd.Render;
@@ -64,7 +82,17 @@ try
             consoleVisible = !consoleVisible;
         };
 
-        menu.Items.Add("Seite wechseln", null, (_, _) => lcd.TogglePage());
+        // Untermenue mit einem Eintrag pro registrierter Seite - direkte Auswahl per
+        // Maus, unabhaengig von der physischen G13-Button-Belegung. Neue Seiten tauchen
+        // hier automatisch mit auf.
+        var pageMenu = new ToolStripMenuItem("Seite waehlen");
+        for (int i = 0; i < lcd.Pages.Count; i++)
+        {
+            int index = i;
+            pageMenu.DropDownItems.Add(lcd.Pages[i].Name, null, (_, _) => lcd.SelectPage(index));
+        }
+        menu.Items.Add(pageMenu);
+
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Beenden", null, (_, _) => Application.Exit());
         trayIcon.ContextMenuStrip = menu;

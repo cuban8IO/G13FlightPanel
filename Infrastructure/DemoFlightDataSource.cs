@@ -1,4 +1,6 @@
-namespace G13FlightPanel;
+using G13FlightPanel.Domain;
+
+namespace G13FlightPanel.Infrastructure;
 
 /// Synthetic data feed so the LCD/console pipeline can be built and exercised without
 /// MSFS or the SimConnect managed DLL. Used automatically whenever HAVE_SIMCONNECT is
@@ -34,6 +36,12 @@ public sealed class DemoFlightDataSource : IFlightDataSource
                 int lateralMode = phase switch { 3 => 30, >= 4 => 31, _ => 0 }; // 30=LOC*, 31=LOC
                 int verticalMode = phase switch { 5 => 90, 6 => 91, _ => 0 }; // 90=G/S*, 91=G/S
 
+                // Synthetische Fuel-Kapazitaet von 100gal, Quantity oszilliert wie zuvor
+                // FuelPercent direkt tat - FuelPercent ist jetzt eine berechnete Property
+                // auf FlightData (siehe Domain/FlightData.cs).
+                const double fuelCapacity = 100;
+                double fuelQuantity = fuelCapacity * (75 + 20 * Math.Sin(_t / 4)) / 100;
+
                 DataUpdated?.Invoke(new FlightData
                 {
                     IndicatedAirspeedKt = 250 + 10 * Math.Sin(_t),
@@ -43,7 +51,8 @@ public sealed class DemoFlightDataSource : IFlightDataSource
                     FlapsHandleIndex = 0,
                     Nav1FrequencyMhz = 114.30,
                     Nav1Obs = 270,
-                    FuelPercent = 75 + 20 * Math.Sin(_t / 4),
+                    FuelQuantityGal = fuelQuantity,
+                    FuelCapacityGal = fuelCapacity,
                     ApMasterOn = true,
                     ApApproachHoldOn = apr,
                     ApAltitudeHoldOn = alt,

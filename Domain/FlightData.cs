@@ -1,5 +1,7 @@
-namespace G13FlightPanel;
+namespace G13FlightPanel.Domain;
 
+// Nicht jede Property ist 1:1 aus FlightDataVariables gespeist - manche sind berechnet
+// (z.B. FuelPercent aus FuelQuantityGal/FuelCapacityGal). Siehe Application/FlightDataVariables.cs.
 public sealed class FlightData
 {
     public double IndicatedAirspeedKt { get; set; }
@@ -9,7 +11,11 @@ public sealed class FlightData
     public double FlapsHandleIndex { get; set; }
     public double Nav1FrequencyMhz { get; set; }
     public double Nav1Obs { get; set; }
-    public double FuelPercent { get; set; }
+
+    public double FuelQuantityGal { get; set; }
+    public double FuelCapacityGal { get; set; }
+    public double FuelPercent => FuelCapacityGal > 0 ? FuelQuantityGal / FuelCapacityGal * 100 : 0;
+
     public bool ApMasterOn { get; set; }
     public bool ApApproachHoldOn { get; set; }
     public bool ApAltitudeHoldOn { get; set; }

@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
+using G13FlightPanel.Application.Pages;
+using G13FlightPanel.Domain;
 
-namespace G13FlightPanel;
+namespace G13FlightPanel.Infrastructure;
 
 /// P/Invoke wrapper around the flat "Logitech Gaming LCD SDK" (LogitechLcd.dll) for the
 /// G13/G15/G510 mono LCD. Renders text itself with a hand-drawn 5x7 pixel font (each
@@ -19,10 +21,12 @@ public sealed class LcdDisplay : IDisposable
     private const int LcdTypeMono = 0x1;
     private const int MonoWidth = 160;
     private const int MonoHeight = 43;
-    private const int PageCount = 2;
 
     // Die 4 Tasten unter dem G13-LCD (Bitflags aus dem Logitech LCD SDK).
     private const int LcdButton0 = 0x1;
+    private const int LcdButton1 = 0x2;
+    private const int LcdButton2 = 0x4;
+    private const int LcdButton3 = 0x8;
 
     private const int GlyphWidth = 5;
     private const int GlyphHeight = 7;
@@ -102,12 +106,32 @@ public sealed class LcdDisplay : IDisposable
 
     public bool HardwareAvailable { get; }
     private bool _consoleUsable = true;
-    private int _page;
-    private bool _button0WasPressed;
     private readonly byte[] _bitmapBuffer = new byte[MonoWidth * MonoHeight];
 
-    public LcdDisplay()
+    private readonly IReadOnlyList<ILcdPage> _pages;
+    private readonly Dictionary<int, ILcdPage[]> _buttonPages;
+    private readonly Dictionary<int, int> _buttonPositions = new();
+    private int _prevButtonMask;
+    private ILcdPage _currentPage;
+
+    public LcdDisplay(IPageRepository pageRepository)
     {
+        _pages = pageRepository.GetAllPages();
+        _currentPage = _pages[0];
+
+        ILcdPage Of<T>() where T : ILcdPage => _pages.OfType<T>().First();
+
+        // Button -> zugeordnete Seiten. Mehrere Eintraege = wiederholtes Druecken
+        // blaettert zwischen ihnen um (jeder Button merkt sich seine eigene Position
+        // unabhaengig von den anderen Buttons). Frei anpassbar/erweiterbar - eine neue
+        // Seite kann einem neuen ODER einem bestehenden (geteilten) Button zugeordnet
+        // werden, ohne eine andere Datei anzufassen.
+        _buttonPages = new Dictionary<int, ILcdPage[]>
+        {
+            [LcdButton0] = [Of<FlightDataPage>()],
+            [LcdButton1] = [Of<AutopilotPage>()],
+        };
+
         try
         {
             HardwareAvailable = LogiLcdInit("G13 Flight Panel", LcdTypeMono) && LogiLcdIsConnected(LcdTypeMono);
@@ -128,8 +152,10 @@ public sealed class LcdDisplay : IDisposable
             : "Kein G13/LogitechLcd.dll gefunden - Ausgabe nur auf der Konsole.");
     }
 
-    // Von aussen aufrufbar (z.B. Tray-Menu "Seite wechseln"), zusaetzlich zur G13-Taste.
-    public void TogglePage() => _page = (_page + 1) % PageCount;
+    // Fuer das Tray-Untermenue (siehe Program.cs) - listet alle Seiten fuer die
+    // Direktauswahl per Maus, unabhaengig von der physischen Button-Belegung.
+    public IReadOnlyList<ILcdPage> Pages => _pages;
+    public void SelectPage(int index) => _currentPage = _pages[index];
 
     // Vom Tray-Menu aufgerufen, wenn die Konsole neu geoeffnet wird (siehe Program.cs) -
     // ohne das wuerde ein einmal fehlgeschlagener Console.Clear()-Versuch (z.B. beim
@@ -140,16 +166,9 @@ public sealed class LcdDisplay : IDisposable
     public void Render(FlightData data)
     {
         if (HardwareAvailable)
-        {
-            // Steigende Flanke: nur beim Druecken einmal umschalten, nicht bei jedem
-            // Render()-Tick erneut, solange die Taste gehalten wird.
-            bool button0Pressed = LogiLcdIsButtonPressed(LcdButton0);
-            if (button0Pressed && !_button0WasPressed)
-                TogglePage();
-            _button0WasPressed = button0Pressed;
-        }
+            HandleButtons();
 
-        var lines = _page == 0 ? BuildFlightPage(data) : BuildAutopilotPage(data);
+        var lines = _currentPage.BuildLines(data);
 
         // Drei Versuche mit Cursor-Positionierung (in-place ueberschreiben ohne die
         // fruehere Ausgabe zu loeschen) haben alle das gleiche Problem gezeigt und sind
@@ -181,57 +200,26 @@ public sealed class LcdDisplay : IDisposable
         LogiLcdUpdate();
     }
 
-    private static string[] BuildFlightPage(FlightData data)
+    private void HandleButtons()
     {
-        const int ColWidth = 13;
-        string leftIas = $"IAS {data.IndicatedAirspeedKt:000}KT".PadRight(ColWidth);
-        string leftAlt = $"ALT {data.AltitudeFt:00000}FT".PadRight(ColWidth);
-        string leftNav = $"NAV {data.Nav1FrequencyMhz:000.00}".PadRight(ColWidth);
-        string leftFlp = $"FLP {data.FlapsHandleIndex:0}/4".PadRight(ColWidth);
+        foreach (var (button, pages) in _buttonPages)
+        {
+            bool pressed = LogiLcdIsButtonPressed(button);
+            bool wasPressed = (_prevButtonMask & button) != 0;
 
-        return
-        [
-            leftIas + $"HDG {data.HeadingDeg:000}",
-            leftAlt + $"VS {data.VerticalSpeedFpm:+0000;-0000}",
-            leftFlp + $"FUEL {data.FuelPercent:000}",
-            leftNav + $"OBS {data.Nav1Obs:000}",
-        ];
-    }
+            // Steigende Flanke: nur beim Druecken einmal umschalten, nicht bei jedem
+            // Render()-Tick erneut, solange die Taste gehalten wird.
+            if (pressed && !wasPressed)
+            {
+                // -1 als Default: der erste Druck auf einen noch nie gedrueckten Button
+                // soll die erste zugeordnete Seite zeigen (Index 0), nicht die zweite.
+                int next = (_buttonPositions.GetValueOrDefault(button, -1) + 1) % pages.Length;
+                _buttonPositions[button] = next;
+                _currentPage = pages[next];
+            }
 
-    private static string[] BuildAutopilotPage(FlightData data)
-    {
-        // Aktiver Vertikal-/Lateral-Modus statt nur des APPR-Knopfstatus - zeigt, welcher
-        // Modus der AP gerade tatsaechlich verfolgt (wie die FMA im echten Cockpit).
-        // Bewusst als eigenes "MODE"-Feld getrennt von den "SEL"-Zeilen darunter: SEL ist
-        // der eingestellte Zielwert, MODE ist der gerade aktiv verfolgte Modus - zwei
-        // unterschiedliche Dinge.
-        //
-        // FBW-FMA-Codes (LOC*/LOC, G/S*/G/S) haben Vorrang vor den generischen Booleans:
-        // die kennen "armed/capturing" (der Stern) nicht, nur "an/aus". Steht der FMA-Code
-        // auf 0 (LVar nicht vorhanden/falscher Zahlencode), faellt es automatisch auf die
-        // generische Anzeige zurueck statt blank/falsch zu bleiben.
-        string vertMode = data.ApFmaVerticalMode == 90 ? "G/S*"
-            : data.ApFmaVerticalMode == 91 ? "G/S"
-            : data.ApApproachHoldOn ? "APR"
-            : data.ApAltitudeHoldOn ? "ALT"
-            : data.ApVerticalSpeedHoldOn ? "VS"
-            : "---";
-        string latMode = data.ApFmaLateralMode == 30 ? "LOC*"
-            : data.ApFmaLateralMode == 31 ? "LOC"
-            : data.ApNavHoldOn ? "NAV"
-            : data.ApHeadingHoldOn ? "HDG"
-            : "---";
-
-        const int ColWidth = 12;
-        string leftAp = $"AP {(data.ApMasterOn ? "ON" : "OFF")}".PadRight(ColWidth);
-
-        return
-        [
-            leftAp + $"MODE {vertMode}/{latMode}",
-            $"ALT SEL {data.ApSelectedAltitudeFt:00000}FT",
-            $"HDG SEL {data.ApSelectedHeadingDeg:000}",
-            $"SPD SEL {data.ApSelectedSpeedKt:000}KT",
-        ];
+            _prevButtonMask = pressed ? (_prevButtonMask | button) : (_prevButtonMask & ~button);
+        }
     }
 
     private void RenderToBitmap(string[] lines)

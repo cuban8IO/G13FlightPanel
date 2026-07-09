@@ -1,4 +1,4 @@
-namespace G13FlightPanel;
+namespace G13FlightPanel.Domain;
 
 public interface IFlightDataSource : IDisposable
 {
