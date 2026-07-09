@@ -128,6 +128,9 @@ public sealed class LcdDisplay : IDisposable
             : "Kein G13/LogitechLcd.dll gefunden - Ausgabe nur auf der Konsole.");
     }
 
+    // Von aussen aufrufbar (z.B. Tray-Menu "Seite wechseln"), zusaetzlich zur G13-Taste.
+    public void TogglePage() => _page = (_page + 1) % PageCount;
+
     public void Render(FlightData data)
     {
         if (HardwareAvailable)
@@ -136,7 +139,7 @@ public sealed class LcdDisplay : IDisposable
             // Render()-Tick erneut, solange die Taste gehalten wird.
             bool button0Pressed = LogiLcdIsButtonPressed(LcdButton0);
             if (button0Pressed && !_button0WasPressed)
-                _page = (_page + 1) % PageCount;
+                TogglePage();
             _button0WasPressed = button0Pressed;
         }
 

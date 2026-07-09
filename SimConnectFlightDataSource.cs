@@ -40,6 +40,8 @@ public sealed class SimConnectFlightDataSource : IFlightDataSource
     }
 
     private const int MaxFailedAttempts = 3;
+    private const int RetryDelayMs = 5000;
+    private const int ReconnectWhileDemoDelayMs = 15000;
 
     private SimConnect? _sc;
     private DemoFlightDataSource? _demo;
@@ -59,41 +61,76 @@ public sealed class SimConnectFlightDataSource : IFlightDataSource
     private void Run()
     {
         int failedAttempts = 0;
+        bool usingDemo = false;
+
         while (_running)
         {
             try
             {
                 Connect();
                 failedAttempts = 0;
+
+                if (usingDemo)
+                {
+                    Console.WriteLine("MSFS wieder erreichbar - wechsle zurueck von Demo-Modus.");
+                    StopDemo();
+                    usingDemo = false;
+                }
+
                 while (_running && _signal.WaitOne(1000))
                     _sc?.ReceiveMessage();
             }
             catch (COMException)
             {
-                // MSFS not running / SimConnect not reachable yet - retry.
+                // MSFS not running / SimConnect not reachable yet - retry. Once in demo
+                // mode, keep trying in the background (slower interval, no more urgency)
+                // so real data comes back automatically once MSFS is up, without needing
+                // to restart the app.
                 _sc?.Dispose();
                 _sc = null;
+
+                if (usingDemo)
+                {
+                    // _signal statt Thread.Sleep: Dispose() kann so per _signal.Set()
+                    // sofort aufwecken, statt bis zu 15s auf den Shutdown zu warten.
+                    _signal.WaitOne(ReconnectWhileDemoDelayMs);
+                    continue;
+                }
+
                 failedAttempts++;
 
                 if (failedAttempts >= MaxFailedAttempts)
                 {
                     Console.WriteLine($"MSFS nach {MaxFailedAttempts} Versuchen nicht erreichbar - wechsle in Demo-Modus.");
-                    FallBackToDemo();
-                    return;
+                    StartDemo();
+                    usingDemo = true;
+                    continue;
                 }
 
                 Console.WriteLine($"SimConnect nicht erreichbar, naechster Versuch in 5s... ({failedAttempts}/{MaxFailedAttempts})");
-                Thread.Sleep(5000);
+                _signal.WaitOne(RetryDelayMs);
             }
         }
+
+        StopDemo();
     }
 
-    private void FallBackToDemo()
+    private void StartDemo()
     {
         _demo = new DemoFlightDataSource();
-        _demo.DataUpdated += data => DataUpdated?.Invoke(data);
+        _demo.DataUpdated += RelayDemoData;
         _demo.Start();
     }
+
+    private void StopDemo()
+    {
+        if (_demo is null) return;
+        _demo.DataUpdated -= RelayDemoData;
+        _demo.Dispose();
+        _demo = null;
+    }
+
+    private void RelayDemoData(FlightData data) => DataUpdated?.Invoke(data);
 
     private void Connect()
     {

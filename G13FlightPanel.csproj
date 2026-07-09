@@ -1,17 +1,28 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Version>0.1.0</Version>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
     <!-- AnyCPU runs as x64 here. LogitechLcd.dll from the LGS LCD SDK sometimes only
          ships as x86 - if LcdDisplay reports BadImageFormatException on your gaming PC,
          set this to x86 instead (and make sure a matching x86 .NET runtime is installed). -->
     <PlatformTarget>AnyCPU</PlatformTarget>
     <SimConnectDll>libs\Microsoft.FlightSimulator.SimConnect.dll</SimConnectDll>
   </PropertyGroup>
+
+  <!-- Zusaetzlich ins Build-Output kopieren (nicht nur als Exe-Ressource eingebettet) -
+       Program.cs laedt es darueber fuer das Tray-Icon, unabhaengig davon ob per
+       "dotnet run", "dotnet <dll>" oder direkt die .exe gestartet wird. -->
+  <ItemGroup>
+    <None Include="icon.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 
   <!-- Flips on once you've copied the managed SimConnect assembly into libs/ (see
        README.md) - until then the project builds and runs in demo-data mode. -->

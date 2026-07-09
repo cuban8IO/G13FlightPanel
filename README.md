@@ -1,7 +1,8 @@
 # G13 Flight Panel
 
 Zeigt Flugdaten aus MSFS 2020 (FBW A32NX) auf dem G13-LCD (4 Textzeilen, 160x43 Pixel)
-an. Zwei Seiten, per Taste unter dem Display umschaltbar:
+an. Läuft als Tray-Icon (kein Konsolenfenster) mit Rechtsklick-Menü. Zwei Seiten, per
+Taste unter dem Display **oder** per Tray-Menü umschaltbar:
 
 - **Seite 1 (Flugdaten)**: IAS/Heading, Höhe/Vertical Speed, Flap-Lever/Fuel, NAV1-Frequenz/OBS
 - **Seite 2 (Autopilot)**: AP-Status + aktiver Modus, Selected Altitude/Heading/Speed
@@ -20,8 +21,8 @@ NAV 118.10   OBS 270          SPD SEL 260KT
 - **.NET 10 SDK** – [dotnet.microsoft.com/download](https://dotnet.microsoft.com/download)
   zum Bauen und Ausführen.
 - Optional, für echte Hardware-Ausgabe: ein **Logitech G13** Gameboard + die
-  **Logitech Gaming Software (LGS)** – siehe Abschnitt 2. Ohne beides läuft die App im
-  Demo-Modus mit reiner Konsolenausgabe.
+  **Logitech Gaming Software (LGS)** – siehe Abschnitt 2. Ohne beides läuft die App trotzdem
+  (Tray-Icon, aber ohne LCD-Ausgabe).
 - Optional, für echte Flugdaten: **Microsoft Flight Simulator 2020** mit installiertem
   **MSFS SDK** – siehe Abschnitt 3. Ohne SDK/laufendes MSFS läuft die App im Demo-Modus mit
   synthetischen Werten.
@@ -40,9 +41,9 @@ NAV 118.10   OBS 270          SPD SEL 260KT
 2. Bauen: `dotnet build`
 3. Starten: `dotnet run` (oder `dotnet run --demo` für erzwungenen Demo-Modus)
 
-Damit läuft der Demo-Modus (Konsolenausgabe, synthetische Werte) – ohne G13 oder MSFS
-nötig. Für die Hardware-Ausgabe bzw. echte Flugdaten die Abschnitte 2 und 3 unten
-durchgehen.
+Damit läuft der Demo-Modus (synthetische Werte, Tray-Icon im Infobereich unten rechts) –
+ohne G13 oder MSFS nötig. Für die Hardware-Ausgabe bzw. echte Flugdaten die Abschnitte 2
+und 3 unten durchgehen.
 
 ## Architektur
 
@@ -54,15 +55,33 @@ durchgehen.
 - `SimConnectFlightDataSource.cs` – echte Sim-Daten via SimConnect, nur kompiliert wenn
   `HAVE_SIMCONNECT` gesetzt ist (siehe unten). Fällt nach 3 gescheiterten
   Verbindungsversuchen (~15s) automatisch auf `DemoFlightDataSource` zurück, statt endlos
-  weiter zu versuchen.
+  weiter zu versuchen. Versucht danach im Hintergrund alle 15s weiter, zu MSFS zu
+  verbinden, und wechselt automatisch zurück auf echte Daten, sobald MSFS erreichbar ist –
+  kein manueller Neustart der App nötig, egal in welcher Reihenfolge App und MSFS
+  gestartet werden.
 - `LcdDisplay.cs` – rendert die Textzeilen selbst mit einem handgezeichneten 5x7-Pixel-Font
   und schickt das Ergebnis als Bitmap ans G13-LCD (`LogiLcdMonoSetBackground`). Fällt
-  automatisch auf reine Konsolenausgabe zurück, wenn die DLL/Hardware fehlt.
-- `Program.cs` – wählt Demo- oder SimConnect-Quelle je nach Compile-Flag und `--demo`-Argument.
+  automatisch auf reine Konsolenausgabe zurück, wenn die DLL/Hardware fehlt (sofern eine
+  Konsole sichtbar ist, siehe Tray-Icon unten).
+- `Program.cs` – Tray-Icon-App (kein Konsolenfenster per Default), wählt Demo- oder
+  SimConnect-Quelle je nach Compile-Flag und `--demo`-Argument.
 
-Das Projekt kompiliert und läuft **so wie es ist** (Demo-Modus, Konsolenausgabe) – auch
-ohne LGS und ohne MSFS SDK. Erst wenn du die beiden SDKs unten einbindest, schaltet es
-automatisch auf echte Hardware/Sim-Daten um.
+Das Projekt kompiliert und läuft **so wie es ist** (Demo-Modus) – auch ohne LGS und ohne
+MSFS SDK. Erst wenn du die beiden SDKs unten einbindest, schaltet es automatisch auf echte
+Hardware/Sim-Daten um.
+
+### Tray-Icon
+
+Die App läuft ohne Konsolenfenster im Infobereich der Taskleiste (künstlicher-Horizont-
+Icon). Rechtsklick öffnet ein Menü:
+
+- **Konsole anzeigen/ausblenden** – öffnet bei Bedarf ein Konsolenfenster für die
+  Diagnose-Ausgaben (Verbindungsstatus, Fehler). Standardmäßig aus, da `Console.WriteLine`
+  ohne Konsole einfach ins Leere schreibt statt einen Fehler zu werfen. Zeigt nur neue
+  Meldungen ab dem Öffnen, keine Historie.
+- **Seite wechseln** – identisch zur G13-LCD-Taste (Button 0), falls man gerade nicht am
+  G13 sitzt.
+- **Beenden**
 
 ## 1. Jetzt testen (Demo-Modus)
 
@@ -71,9 +90,11 @@ dotnet run
 dotnet run --demo   # erzwingt Demo-Modus sofort, auch wenn SimConnect eingerichtet ist
 ```
 
-Du solltest 4 sich ändernde Datenzeilen in der Konsole sehen. Das prüft nur die
-Programmlogik – noch ohne G13 oder Sim. `--demo` ist auch nützlich, um die AP-Seite (inkl.
-LOC*/G-S-Zyklus) ohne laufendes MSFS durchzutesten.
+Es erscheint kein Fenster – nur ein neues Icon im Infobereich der Taskleiste (ggf. über
+den Pfeil "Ausgeblendete Symbole einblenden" sichtbar). Rechtsklick → "Konsole anzeigen"
+zeigt 4 sich ändernde Datenzeilen. Das prüft nur die Programmlogik – noch ohne G13 oder
+Sim. `--demo` ist auch nützlich, um die AP-Seite (inkl. LOC*/G-S-Zyklus) ohne laufendes
+MSFS durchzutesten.
 
 ## 2. Auf dem Gaming-PC: G13-LCD anschließen
 
@@ -82,8 +103,8 @@ LOC*/G-S-Zyklus) ohne laufendes MSFS durchzutesten.
    Systemen noch.
 2. G13 anschließen, LGS einmal starten.
 3. `dotnet build` – kopiert `libs\LogitechLcd.dll` automatisch flach ins Build-Output
-   (siehe `.csproj`). `dotnet run` – die Zeile `LcdDisplay` sollte jetzt `G13-LCD gefunden`
-   melden statt des Fallback-Texts.
+   (siehe `.csproj`). `dotnet run`, dann im Tray-Menü "Konsole anzeigen" – die Zeile
+   `LcdDisplay` sollte jetzt `G13-LCD gefunden` melden statt des Fallback-Texts.
 4. Falls stattdessen `Kein G13/LogitechLcd.dll gefunden`: meist steckt eine
    `DllNotFoundException`/`BadImageFormatException` dahinter, die intern abgefangen wird
    (siehe "Bekannte Stolpersteine" unten für beide Fälle).
@@ -127,8 +148,8 @@ gehaltener Tastendruck nicht mehrfach pro Sekunde umschaltet.
 4. `dotnet build` neu ausführen: Sobald `libs\Microsoft.FlightSimulator.SimConnect.dll`
    existiert, setzt die `.csproj` automatisch `HAVE_SIMCONNECT`, und
    `SimConnectFlightDataSource.cs` wird mitkompiliert.
-5. MSFS mit dem FBW A320 starten, dann `dotnet run` – Konsole sollte `Mit MSFS
-   verbunden.` zeigen.
+5. MSFS mit dem FBW A320 starten, dann `dotnet run` – im Tray-Menü "Konsole anzeigen"
+   sollte `Mit MSFS verbunden.` zeigen.
 
 Läuft MSFS nicht oder ist SimConnect nicht erreichbar, versucht die App 3x im 5s-Abstand
 zu verbinden und wechselt danach automatisch in den Demo-Modus (kein manuelles Neustarten
