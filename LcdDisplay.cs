@@ -131,6 +131,12 @@ public sealed class LcdDisplay : IDisposable
     // Von aussen aufrufbar (z.B. Tray-Menu "Seite wechseln"), zusaetzlich zur G13-Taste.
     public void TogglePage() => _page = (_page + 1) % PageCount;
 
+    // Vom Tray-Menu aufgerufen, wenn die Konsole neu geoeffnet wird (siehe Program.cs) -
+    // ohne das wuerde ein einmal fehlgeschlagener Console.Clear()-Versuch (z.B. beim
+    // allerersten Render()-Tick, bevor ueberhaupt eine Konsole existiert) den Konsolen-
+    // Spiegel fuer immer abschalten, selbst nachdem spaeter eine Konsole geoeffnet wird.
+    public void ResetConsoleMirror() => _consoleUsable = true;
+
     public void Render(FlightData data)
     {
         if (HardwareAvailable)
@@ -151,10 +157,9 @@ public sealed class LcdDisplay : IDisposable
         // loeschen und neu schreiben. Start-Banner/Fehler bleiben dadurch nicht stehen,
         // aber die Anzeige selbst funktioniert wieder verlaesslich.
         //
-        // VS Code's Debug Console (and any other redirected/non-terminal host) has no
-        // real console buffer - Console.Clear() can throw there with varying exception
-        // types depending on host. Try once; if it fails, stop retrying every tick and
-        // just skip the console mirror from then on (LCD output below is unaffected).
+        // Ohne sichtbare Konsole (Tray-App-Default) wirft Console.Clear() eine
+        // IOException ("Handle ist ungueltig") - wird hier abgefangen und der Spiegel
+        // bis zum naechsten ResetConsoleMirror()-Aufruf abgeschaltet.
         if (_consoleUsable)
         {
             try

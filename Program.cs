@@ -4,6 +4,19 @@ using G13FlightPanel;
 
 Application.EnableVisualStyles();
 
+// Verhindert mehrere gleichzeitig laufende Instanzen: ohne sichtbares Konsolenfenster
+// (Tray-App) faellt es leicht nicht aufzufallen, dass noch eine alte Instanz laeuft -
+// zwei Instanzen wuerden sich dann ums G13-LCD streiten (nur eine gewinnt, die andere
+// zeigt scheinbar nichts an, obwohl ihre eigenen SDK-Aufrufe Erfolg melden).
+using var singleInstanceMutex = new Mutex(true, "G13FlightPanel_SingleInstance", out bool isFirstInstance);
+if (!isFirstInstance)
+{
+    MessageBox.Show(
+        "G13 Flight Panel laeuft bereits (siehe Infobereich der Taskleiste, ggf. ueber \"Ausgeblendete Symbole einblenden\").",
+        "G13 Flight Panel", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    return;
+}
+
 try
 {
     using var lcd = new LcdDisplay();
@@ -44,6 +57,7 @@ try
             {
                 NativeConsole.AllocConsole();
                 Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+                lcd.ResetConsoleMirror();
                 Console.WriteLine("G13 Flight Panel - Konsole geoeffnet.");
                 toggleConsoleItem.Text = "Konsole ausblenden";
             }
