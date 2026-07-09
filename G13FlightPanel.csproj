@@ -1,0 +1,46 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- AnyCPU runs as x64 here. LogitechLcd.dll from the LGS LCD SDK sometimes only
+         ships as x86 - if LcdDisplay reports BadImageFormatException on your gaming PC,
+         set this to x86 instead (and make sure a matching x86 .NET runtime is installed). -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <SimConnectDll>libs\Microsoft.FlightSimulator.SimConnect.dll</SimConnectDll>
+  </PropertyGroup>
+
+  <!-- Flips on once you've copied the managed SimConnect assembly into libs/ (see
+       README.md) - until then the project builds and runs in demo-data mode. -->
+  <PropertyGroup Condition="Exists('$(SimConnectDll)')">
+    <DefineConstants>$(DefineConstants);HAVE_SIMCONNECT</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(SimConnectDll)')">
+    <Reference Include="Microsoft.FlightSimulator.SimConnect">
+      <HintPath>$(SimConnectDll)</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Native runtime companion to the managed assembly above - copy it into libs/ too
+       (see README.md) and it lands next to the built .exe automatically. -->
+  <ItemGroup Condition="Exists('libs\SimConnect.dll')">
+    <None Include="libs\SimConnect.dll">
+      <Link>SimConnect.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Logitech Gaming LCD SDK (see libs/README.md) - copied next to the .exe so
+       LcdDisplay's [DllImport("LogitechLcd.dll")] can find it. -->
+  <ItemGroup Condition="Exists('libs\LogitechLcd.dll')">
+    <None Include="libs\LogitechLcd.dll">
+      <Link>LogitechLcd.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

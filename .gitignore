@@ -1,0 +1,10 @@
+# .NET build output
+bin/
+obj/
+
+# Proprietary SDK binaries (Logitech LCD SDK, MSFS SimConnect SDK) - not ours to
+# redistribute, see README.md for how to obtain and place them.
+libs/*.dll
+
+# Claude Code local settings/runtime state
+.claude/
