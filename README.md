@@ -47,24 +47,38 @@ und 3 unten durchgehen.
 
 ## Architektur
 
-- `FlightData.cs` – Datenmodell für einen Snapshot.
-- `IFlightDataSource.cs` – liefert `FlightData`-Updates per Event.
-- `DemoFlightDataSource.cs` – erzeugt synthetische, sich verändernde Werte (auch für die
-  AP-Seite, inkl. eines ~35s-Zyklus durch verschiedene AP-Modi bis zu einem simulierten
-  ILS-Anflug), **immer verfügbar**, kein SDK nötig.
-- `SimConnectFlightDataSource.cs` – echte Sim-Daten via SimConnect, nur kompiliert wenn
-  `HAVE_SIMCONNECT` gesetzt ist (siehe unten). Fällt nach 3 gescheiterten
-  Verbindungsversuchen (~15s) automatisch auf `DemoFlightDataSource` zurück, statt endlos
-  weiter zu versuchen. Versucht danach im Hintergrund alle 15s weiter, zu MSFS zu
-  verbinden, und wechselt automatisch zurück auf echte Daten, sobald MSFS erreichbar ist –
-  kein manueller Neustart der App nötig, egal in welcher Reihenfolge App und MSFS
-  gestartet werden.
-- `LcdDisplay.cs` – rendert die Textzeilen selbst mit einem handgezeichneten 5x7-Pixel-Font
-  und schickt das Ergebnis als Bitmap ans G13-LCD (`LogiLcdMonoSetBackground`). Fällt
-  automatisch auf reine Konsolenausgabe zurück, wenn die DLL/Hardware fehlt (sofern eine
-  Konsole sichtbar ist, siehe Tray-Icon unten).
-- `Program.cs` – Tray-Icon-App (kein Konsolenfenster per Default), wählt Demo- oder
-  SimConnect-Quelle je nach Compile-Flag und `--demo`-Argument.
+Grob an Clean Architecture angelehnt (Domain/Application/Infrastructure als Ordner mit
+passenden Namespaces), mit Repository-Pattern für die LCD-Seiten und Dependency
+Injection als Verdrahtung – bewusst nicht als separate Projekte/Assemblies, dafür ist
+dieses Tool zu klein, nur als Ordnerstruktur innerhalb des einen Projekts.
+
+```
+Domain/           - reine Datenmodelle/Verträge, keine externen Abhängigkeiten
+  FlightData.cs         Datenmodell für einen Snapshot (manche Properties berechnet,
+                         z. B. FuelPercent aus FuelQuantityGal/FuelCapacityGal)
+  IFlightDataSource.cs   liefert FlightData-Updates per Event
+  ILcdPage.cs            eine LCD-Seite: Name + BuildLines(FlightData)
+  IPageRepository.cs     Zugriff auf alle registrierten Seiten
+
+Application/      - Logik, die Domain-Objekte orchestriert, aber nichts Externes anspricht
+  FlightDataVariables.cs SimVar-Liste, single source of truth (siehe unten)
+  PageRepository.cs      IPageRepository-Implementierung (sammelt alle ILcdPage per DI)
+  Pages/
+    FlightDataPage.cs     Seite 1 (IAS/Höhe/VS/Heading/Flaps/Fuel/NAV)
+    AutopilotPage.cs      Seite 2 (AP-Status/Modus/Selected-Werte)
+
+Infrastructure/   - alles, was mit der Außenwelt redet
+  DemoFlightDataSource.cs      synthetische Werte, immer verfügbar, kein SDK nötig
+  SimConnectFlightDataSource.cs  echte Sim-Daten via SimConnect (nur mit HAVE_SIMCONNECT)
+  LcdDisplay.cs                 5x7-Pixel-Font-Rendering, G13-Tasten, Konsolen-Spiegel
+
+Program.cs        - Composition Root: baut den DI-Container, verdrahtet alles
+```
+
+`SimConnectFlightDataSource` fällt nach 3 gescheiterten Verbindungsversuchen (~15s)
+automatisch auf `DemoFlightDataSource` zurück, statt endlos weiter zu versuchen, und
+danach im Hintergrund alle 15s weiter zu MSFS zu verbinden – kein manueller Neustart
+nötig, egal in welcher Reihenfolge App und MSFS gestartet werden.
 
 Das Projekt kompiliert und läuft **so wie es ist** (Demo-Modus) – auch ohne LGS und ohne
 MSFS SDK. Erst wenn du die beiden SDKs unten einbindest, schaltet es automatisch auf echte
@@ -79,8 +93,8 @@ Icon). Rechtsklick öffnet ein Menü:
   Diagnose-Ausgaben (Verbindungsstatus, Fehler). Standardmäßig aus, da `Console.WriteLine`
   ohne Konsole einfach ins Leere schreibt statt einen Fehler zu werfen. Zeigt nur neue
   Meldungen ab dem Öffnen, keine Historie.
-- **Seite wechseln** – identisch zur G13-LCD-Taste (Button 0), falls man gerade nicht am
-  G13 sitzt.
+- **Seite wählen** – Untermenü mit einem Eintrag pro registrierter Seite, direkt per
+  Maus wählbar, unabhängig von der physischen G13-Taste.
 - **Beenden**
 
 ## 1. Jetzt testen (Demo-Modus)
@@ -125,15 +139,21 @@ wurden ausprobiert und verworfen:
    werden – die Buchstaben zerfallen beim Hinting in einzelne Pixel-Fragmente ("sieht nur
    nach Punkten aus").
 
-Die Lösung: ein handgezeichneter 5x7-Pixel-Font (`Font`-Dictionary in `LcdDisplay.cs`),
+Die Lösung: ein handgezeichneter 5x7-Pixel-Font (`Font`-Dictionary in
+`Infrastructure/LcdDisplay.cs`),
 jedes Zeichen ein festes Bitmuster ohne jede Kantenglättung – garantiert scharf und exakt
 gleich breit, kein GDI+/`UseWindowsForms` nötig.
 
 ### Seitenwechsel (LCD-Tasten)
 
-Button 0 (am weitesten links unter dem Display) schaltet zwischen Seite 1 und 2 um
-(`LogiLcdIsButtonPressed`, Bitflag `0x1`). Mit steigender-Flanke-Erkennung, damit ein
-gehaltener Tastendruck nicht mehrfach pro Sekunde umschaltet.
+Jede der 4 Tasten unter dem G13-Display (`LogiLcdIsButtonPressed`, Bitflags `0x1`/`0x2`/
+`0x4`/`0x8`) lässt sich frei einer oder mehreren Seiten zuordnen – das Mapping steht in
+`LcdDisplay`s Konstruktor (`_buttonPages`). Aktuell: Taste 0 → Flugdaten, Taste 1 →
+Autopilot, Tasten 2/3 frei. Teilen sich mehrere Seiten eine Taste, blättert wiederholtes
+Drücken zwischen ihnen um (jede Taste merkt sich ihre eigene Position unabhängig von den
+anderen). Mit steigender-Flanke-Erkennung, damit ein gehaltener Tastendruck nicht
+mehrfach pro Sekunde umschaltet. Alle Seiten sind zusätzlich per Tray-Menü → "Seite
+wählen" direkt per Maus wählbar.
 
 ## 3. SimConnect anbinden (echte Flugdaten)
 
@@ -147,7 +167,7 @@ gehaltener Tastendruck nicht mehrfach pro Sekunde umschaltet.
    kopieren – die `.csproj` kopiert sie dann automatisch mit ins Build-Output.
 4. `dotnet build` neu ausführen: Sobald `libs\Microsoft.FlightSimulator.SimConnect.dll`
    existiert, setzt die `.csproj` automatisch `HAVE_SIMCONNECT`, und
-   `SimConnectFlightDataSource.cs` wird mitkompiliert.
+   `Infrastructure/SimConnectFlightDataSource.cs` wird mitkompiliert.
 5. MSFS mit dem FBW A320 starten, dann `dotnet run` – im Tray-Menü "Konsole anzeigen"
    sollte `Mit MSFS verbunden.` zeigen.
 
@@ -192,15 +212,14 @@ Modus (z. B. `ALT/HDG`, `VS/---`, `APR/NAV` oder `G/S*/LOC*` während eines ILS-
   ändern – im Dev-Modus des Sims (`,`-Taste → Behavior Debug) den aktuellen
   Variablennamen/-wert prüfen. Falls das Lesen fehlschlägt: MobiFlight-WASM-Modul
   installieren, das bietet eine robustere LVar-Bridge über Client Data Areas.
-- **LOC\*/LOC/G-S\*/G-S-Zahlencodes unsicher**: Die in `SimConnectFlightDataSource.cs`
-  verwendeten Codes (30=LOC\*, 31=LOC, 90=G/S\*, 91=G/S für
-  `A32NX_FMA_LATERAL_MODE`/`A32NX_FMA_VERTICAL_MODE`) stammen aus der Erinnerung an FBWs
-  internes Enum, **nicht** aus einer verifizierten Quelle - können sich zwischen
-  FBW-Versionen unterscheiden. Falls die Anzeige während eines echten ILS-Anflugs
-  falsch/blank bleibt: im Dev-Modus den tatsächlichen Wert der beiden LVars ablesen und in
-  `LcdDisplay.BuildAutopilotPage` anpassen. Fällt bei falschem/fehlendem Code automatisch
-  auf die generischen `AUTOPILOT *`-Booleans zurück (ALT/VS/HDG/NAV/APR), nie auf
-  blank/Absturz.
+- **LOC\*/LOC/G-S\*/G-S-Zahlencodes unsicher**: Die in
+  `Application/Pages/AutopilotPage.cs` verwendeten Codes (30=LOC\*, 31=LOC, 90=G/S\*,
+  91=G/S für `A32NX_FMA_LATERAL_MODE`/`A32NX_FMA_VERTICAL_MODE`) stammen aus der
+  Erinnerung an FBWs internes Enum, **nicht** aus einer verifizierten Quelle - können
+  sich zwischen FBW-Versionen unterscheiden. Falls die Anzeige während eines echten
+  ILS-Anflugs falsch/blank bleibt: im Dev-Modus den tatsächlichen Wert der beiden LVars
+  ablesen und dort anpassen. Fällt bei falschem/fehlendem Code automatisch auf die
+  generischen `AUTOPILOT *`-Booleans zurück (ALT/VS/HDG/NAV/APR), nie auf blank/Absturz.
 - **LGS-Instabilität**: LGS ist seit Jahren unsupportet. Falls es unter aktuellem
   Windows Probleme macht (Treibersignatur, Abstürze), ist die Alternative ein Wechsel
   auf rohes USB-HID (G13 als generisches HID-Gerät ansprechen, ohne Logitech-Software) –
@@ -220,13 +239,35 @@ Modus (z. B. `ALT/HDG`, `VS/---`, `APR/NAV` oder `G/S*/LOC*` während eines ILS-
 
 ## Erweitern
 
-Neue Werte anzeigen: in `FlightData.cs` ein Feld ergänzen, in
-`SimConnectFlightDataSource.cs` per `AddVar(...)` einen weiteren SimVar/LVar registrieren
-(gleiche Reihenfolge in `FlightDataStruct`!), in `DemoFlightDataSource.cs` einen
-synthetischen Wert ergänzen, und in `LcdDisplay.BuildFlightPage`/`BuildAutopilotPage` in
-die Textzeilen einbauen. Neue Buchstaben/Symbole brauchen ggf. einen weiteren Eintrag im
-`Font`-Dictionary (5x7-Bitmuster, siehe vorhandene Einträge als Vorlage).
+### Neuen SimVar/LVar anzeigen
 
-Das G13-Display hat nur 4 Zeilen à ca. 26 Zeichen (bei 5x7-Font + 1px Zeichenabstand) –
-bei mehr Werten ggf. eine weitere Seite ergänzen (siehe `_page`/`PageCount`/
-`BuildAutopilotPage` als Vorlage für eine dritte Seite).
+1. In `Domain/FlightData.cs` eine neue Property ergänzen.
+2. In `Application/FlightDataVariables.cs` einen neuen Eintrag in `All` ergänzen
+   (SimVar-/LVar-Name, Einheit, Zuweisungs-Lambda) – **das ist die einzige Stelle**, die
+   sowohl die SimConnect-Registrierung als auch die Extraktion steuert.
+3. In `Infrastructure/SimConnectFlightDataSource.cs`s `FlightDataStruct` ein passendes
+   `double`-Feld an der **gleichen Position** ergänzen (muss zu Schritt 2 in Anzahl und
+   Reihenfolge passen – ein Startup-Check wirft sofort eine klare Fehlermeldung, falls die
+   Anzahl nicht übereinstimmt).
+4. In `Infrastructure/DemoFlightDataSource.cs` einen synthetischen Wert ergänzen, damit
+   der Demo-Modus die neue Property auch zeigt.
+5. In der gewünschten Seite (`Application/Pages/FlightDataPage.cs` oder
+   `AutopilotPage.cs`) in `BuildLines(...)` einbauen. Neue Buchstaben/Symbole brauchen
+   ggf. einen weiteren Eintrag im `Font`-Dictionary in `Infrastructure/LcdDisplay.cs`
+   (5x7-Bitmuster, siehe vorhandene Einträge als Vorlage).
+
+Kommt ein Wert nicht 1:1 aus einer einzelnen SimVar (wie `FuelPercent`, berechnet aus
+zwei rohen Werten), stattdessen die rohen Werte per `FlightDataVariables` befüllen und
+die eigentliche Property in `FlightData.cs` als berechnete `=>`-Property definieren.
+
+### Neue Seite hinzufügen
+
+1. Neue Klasse in `Application/Pages/`, die `ILcdPage` implementiert (`Name` +
+   `BuildLines(FlightData)` – siehe `FlightDataPage.cs`/`AutopilotPage.cs` als Vorlage).
+   Das G13-Display hat nur 4 Zeilen à ca. 26 Zeichen (bei 5x7-Font + 1px Zeichenabstand).
+2. In `Program.cs` (Composition Root) mit `services.AddSingleton<ILcdPage, NeueSeite>();`
+   registrieren – taucht danach automatisch im Tray-Untermenü "Seite wählen" auf.
+3. Optional in `Infrastructure/LcdDisplay.cs`s Konstruktor (`_buttonPages`) einer G13-
+   Taste zuordnen – entweder einer neuen (`LcdButton2`/`LcdButton3` sind noch frei) oder
+   einer bestehenden (dann teilen sich mehrere Seiten die Taste und wiederholtes Drücken
+   blättert zwischen ihnen um). Ohne Zuordnung ist die Seite nur per Tray-Menü erreichbar.
