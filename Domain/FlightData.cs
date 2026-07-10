@@ -31,4 +31,13 @@ public sealed class FlightData
     // Vorbehalt. 0 = kein bekannter Modus / LVar nicht vorhanden.
     public int ApFmaLateralMode { get; set; }
     public int ApFmaVerticalMode { get; set; }
+
+    // Fahrwerk, 0 = eingefahren, 100 = ausgefahren. MSFS kennt standardmaessig nur diese
+    // 4 benannten Positionen (Center/Left/Right/Aux) - passt exakt fuer 3-Bein-Fahrwerke
+    // (z.B. A320), ist aber eine Annaeherung fuer Flugzeuge mit mehr Fahrwerksbeinen
+    // (z.B. A380 mit tatsaechlich 5 Beinen: Bug + 2 Fluegel + 2 Rumpf).
+    public double GearNosePercent { get; set; }
+    public double GearLeftPercent { get; set; }
+    public double GearRightPercent { get; set; }
+    public double GearAuxPercent { get; set; }
 }

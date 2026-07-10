@@ -46,6 +46,10 @@ public sealed class SimConnectFlightDataSource : IFlightDataSource
         public double ApNav1Lock;
         public double ApFmaLateralMode;
         public double ApFmaVerticalMode;
+        public double GearCenterPosition;
+        public double GearLeftPosition;
+        public double GearRightPosition;
+        public double GearAuxPosition;
     }
 
     // Faellt sofort mit klarer Meldung auf statt spaeter still falsche/verschobene Werte

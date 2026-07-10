@@ -39,6 +39,7 @@ try
 
     services.AddSingleton<ILcdPage, FlightDataPage>();
     services.AddSingleton<ILcdPage, AutopilotPage>();
+    services.AddSingleton<ILcdPage, LandingGearPage>();
     services.AddSingleton<IPageRepository, PageRepository>();
     services.AddSingleton<LcdDisplay>();
 

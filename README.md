@@ -1,17 +1,18 @@
 # G13 Flight Panel
 
 Zeigt Flugdaten aus MSFS 2020 (FBW A32NX) auf dem G13-LCD (4 Textzeilen, 160x43 Pixel)
-an. Läuft als Tray-Icon (kein Konsolenfenster) mit Rechtsklick-Menü. Zwei Seiten, per
-Taste unter dem Display **oder** per Tray-Menü umschaltbar:
+an. Läuft als Tray-Icon (kein Konsolenfenster) mit Rechtsklick-Menü. Drei Seiten, per
+Taste unter dem Display **oder** per Tray-Menü wählbar:
 
 - **Seite 1 (Flugdaten)**: IAS/Heading, Höhe/Vertical Speed, Flap-Lever/Fuel, NAV1-Frequenz/OBS
 - **Seite 2 (Autopilot)**: AP-Status + aktiver Modus, Selected Altitude/Heading/Speed
+- **Seite 3 (Fahrwerk)**: Position Bug/Links/Rechts/Aux + Gesamtstatus (UP/DN/TRANSIT)
 
 ```
-IAS 145KT    HDG 270          AP ON        MODE ALT/HDG
-ALT 35000FT  VS +1200         ALT SEL 36000FT
-FLP 2/4      FUEL 075         HDG SEL 280
-NAV 118.10   OBS 270          SPD SEL 260KT
+IAS 145KT    HDG 270          AP ON        MODE ALT/HDG      NOSE 100
+ALT 35000FT  VS +1200         ALT SEL 36000FT                L 100    R 100
+FLP 2/4      FUEL 075         HDG SEL 280                    AUX 000
+NAV 118.10   OBS 270          SPD SEL 260KT                  GEAR DN
 ```
 
 ## Voraussetzungen
@@ -66,6 +67,7 @@ Application/      - Logik, die Domain-Objekte orchestriert, aber nichts Externes
   Pages/
     FlightDataPage.cs     Seite 1 (IAS/Höhe/VS/Heading/Flaps/Fuel/NAV)
     AutopilotPage.cs      Seite 2 (AP-Status/Modus/Selected-Werte)
+    LandingGearPage.cs    Seite 3 (Fahrwerk Bug/Links/Rechts/Aux)
 
 Infrastructure/   - alles, was mit der Außenwelt redet
   DemoFlightDataSource.cs      synthetische Werte, immer verfügbar, kein SDK nötig
@@ -149,7 +151,7 @@ gleich breit, kein GDI+/`UseWindowsForms` nötig.
 Jede der 4 Tasten unter dem G13-Display (`LogiLcdIsButtonPressed`, Bitflags `0x1`/`0x2`/
 `0x4`/`0x8`) lässt sich frei einer oder mehreren Seiten zuordnen – das Mapping steht in
 `LcdDisplay`s Konstruktor (`_buttonPages`). Aktuell: Taste 0 → Flugdaten, Taste 1 →
-Autopilot, Tasten 2/3 frei. Teilen sich mehrere Seiten eine Taste, blättert wiederholtes
+Autopilot, Taste 2 → Fahrwerk, Taste 3 frei. Teilen sich mehrere Seiten eine Taste, blättert wiederholtes
 Drücken zwischen ihnen um (jede Taste merkt sich ihre eigene Position unabhängig von den
 anderen). Mit steigender-Flanke-Erkennung, damit ein gehaltener Tastendruck nicht
 mehrfach pro Sekunde umschaltet. Alle Seiten sind zusätzlich per Tray-Menü → "Seite
@@ -197,6 +199,7 @@ deiner installierten Version, siehe auch die
 | ALT/HDG/SPD selected | `AUTOPILOT ALTITUDE LOCK VAR` / `AUTOPILOT HEADING LOCK DIR` / `AUTOPILOT AIRSPEED HOLD VAR` | Feet / Degrees / Knots |
 | ALT/VS/HDG/NAV/APPR aktiv (generisch) | `AUTOPILOT ALTITUDE LOCK` / `AUTOPILOT VERTICAL HOLD` / `AUTOPILOT HEADING LOCK` / `AUTOPILOT NAV1 LOCK` / `AUTOPILOT APPROACH HOLD` | Bool |
 | LOC\*/LOC, G/S\*/G/S (FBW-FMA) | `L:A32NX_FMA_LATERAL_MODE` / `L:A32NX_FMA_VERTICAL_MODE` | Number (Enum-Code) |
+| Fahrwerk Bug/Links/Rechts/Aux | `GEAR CENTER POSITION` / `GEAR LEFT POSITION` / `GEAR RIGHT POSITION` / `GEAR AUX POSITION` | Percent (0=eingefahren, 100=ausgefahren) |
 
 **SEL vs. MODE**: `ALT/HDG/SPD SEL` auf Seite 2 zeigt immer den im FCU eingestellten
 **Zielwert** – unabhängig davon, ob der Autopilot diesen Modus gerade aktiv verfolgt (genau
@@ -220,6 +223,11 @@ Modus (z. B. `ALT/HDG`, `VS/---`, `APR/NAV` oder `G/S*/LOC*` während eines ILS-
   ILS-Anflugs falsch/blank bleibt: im Dev-Modus den tatsächlichen Wert der beiden LVars
   ablesen und dort anpassen. Fällt bei falschem/fehlendem Code automatisch auf die
   generischen `AUTOPILOT *`-Booleans zurück (ALT/VS/HDG/NAV/APR), nie auf blank/Absturz.
+- **Fahrwerksseite bei mehr als 3 Beinen ungenau**: MSFS kennt standardmäßig nur 4
+  benannte Gear-Positionen (Center/Left/Right/Aux). Für 3-Bein-Fahrwerke (z. B. A320)
+  passt das exakt. Für Flugzeuge mit mehr Beinen (z. B. A380: tatsächlich 5 - Bug + 2
+  Flügel- + 2 Rumpf-/Body-Fahrwerke) kann der Sim das nicht einzeln abbilden; "Aux"
+  repräsentiert dort bestenfalls ein zusätzliches Bein grob/kombiniert, nicht alle.
 - **LGS-Instabilität**: LGS ist seit Jahren unsupportet. Falls es unter aktuellem
   Windows Probleme macht (Treibersignatur, Abstürze), ist die Alternative ein Wechsel
   auf rohes USB-HID (G13 als generisches HID-Gerät ansprechen, ohne Logitech-Software) –

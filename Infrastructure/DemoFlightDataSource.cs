@@ -42,6 +42,11 @@ public sealed class DemoFlightDataSource : IFlightDataSource
                 const double fuelCapacity = 100;
                 double fuelQuantity = fuelCapacity * (75 + 20 * Math.Sin(_t / 4)) / 100;
 
+                // Fahrwerk pendelt langsam zwischen ein-/ausgefahren, damit man den
+                // Uebergangszustand (TRANSIT) im Demo-Modus auch mal sieht. Aux bleibt bei
+                // 0 - simuliert ein typisches 3-Bein-Fahrwerk (A320) ohne 4. Bein.
+                double gearPercent = Math.Clamp(50 + 50 * Math.Sin(_t / 8), 0, 100);
+
                 DataUpdated?.Invoke(new FlightData
                 {
                     IndicatedAirspeedKt = 250 + 10 * Math.Sin(_t),
@@ -64,6 +69,10 @@ public sealed class DemoFlightDataSource : IFlightDataSource
                     ApSelectedSpeedKt = 250 + 20 * Math.Sin(_t / 7),
                     ApFmaLateralMode = lateralMode,
                     ApFmaVerticalMode = verticalMode,
+                    GearNosePercent = gearPercent,
+                    GearLeftPercent = gearPercent,
+                    GearRightPercent = gearPercent,
+                    GearAuxPercent = 0,
                 });
             }
             catch (Exception ex)

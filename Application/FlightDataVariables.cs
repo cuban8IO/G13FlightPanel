@@ -52,5 +52,12 @@ public static class FlightDataVariables
         // im Sim-Devmodus (Behavior Debug) den tatsaechlichen LVar-Wert pruefen.
         new("L:A32NX_FMA_LATERAL_MODE", "Number", (d, v) => d.ApFmaLateralMode = (int)v),
         new("L:A32NX_FMA_VERTICAL_MODE", "Number", (d, v) => d.ApFmaVerticalMode = (int)v),
+
+        // Standard-MSFS-Fahrwerksmodell: nur diese 4 benannten Positionen, siehe
+        // Domain/FlightData.cs fuer den Vorbehalt bei Flugzeugen mit mehr Fahrwerksbeinen.
+        new("GEAR CENTER POSITION", "Percent", (d, v) => d.GearNosePercent = v),
+        new("GEAR LEFT POSITION", "Percent", (d, v) => d.GearLeftPercent = v),
+        new("GEAR RIGHT POSITION", "Percent", (d, v) => d.GearRightPercent = v),
+        new("GEAR AUX POSITION", "Percent", (d, v) => d.GearAuxPercent = v),
     ];
 }
